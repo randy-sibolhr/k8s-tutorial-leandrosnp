@@ -1,4 +1,6 @@
 
+https://dev.to/leandronsp/kubernetes-101-part-v-statefulsets-5dob
+
 when starting new cluster (not k3s-default) 
 k get pods -- result to The connection to the server 0.0.0.0:6550 was refused - did you specify the right host or port?
 
@@ -10,5 +12,204 @@ export KUBECONFIG="$(k3d kubeconfig write leandrosnp)"
 
  kubectl run nginx --image=nginx
  k describe pod nginx  
+ k get pods
+ k get nodes -o wide
 
+ k describe node k3d-leandrosnp-server-0    # control plane, master
+ k describe node k3d-leandrosnp-agent-0     # agent
+
+ # execute commands in a running pod
+  k exec client -- curl localhost
+
+k describe pod server | grep IP                                                                        0|1 ✘  k3d-leandrosnp ⎈  14:20:46 
+IP:               10.42.0.4
+IPs:
+  IP:  10.42.0.4
+
+# instruct client to curl server using its ip
+
+k exec client -- curl 10.42.04  # works
+k exec client --curl server     # doesnt work
+
+# We need some mechanism of pod discovery, where we can declare a special object in Kubernetes that will give a name to a given pod. 
+# Therefore, within the cluster, we could reach Pods by their names instead of internal IP's.
+
+# The Control Plane also employs a component called Controller Manager. 
+# It's responsible to receive a request for special objects like Services and expose them via service discovery.
+
+ kubectl expose pod server --port=80 --target-port=80
+ k get services                                                                                           
+NAME         TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)   AGE
+kubernetes   ClusterIP   10.43.0.1       <none>        443/TCP   35m
+server       ClusterIP   10.43.243.204   <none>        80/TCP    13s
+
+k exec client --curl server # should work
+
+k logs fifo-pod -c server
+
+k apply -f replicaset 
+
+# ReplicaSets are useful only for applications that do NOT need to be updated/deployed constantly. 
+# Almost always we're going to need another object that Kubernetes provides as a workload resource: the deployment object.
+
+# deployment
+# A Deployment allows updates with no downtime. 
+# As for our example with NGINX, let's demonstrate a simple update like changing the NGINX version in the Pod.
+
+k apply -f deployment.yaml
+
+k get pods -o wide
  
+
+k apply -f deployment.yml                                                                              
+deployment.apps/nginx created
+ ~/src/k8s/leandronsp  k get deploy                                                                                          
+NAME    READY   UP-TO-DATE   AVAILABLE   AGE
+nginx   2/2     2            2           7s
+ ~/src/k8s/leandronsp  k get replicasets                                                                                    
+NAME               DESIRED   CURRENT   READY   AGE
+nginx-77b4fdf86c   2         2         2       15s
+ ~/src/k8s/leandronsp  k get pods -o wide                                                                                 
+NAME                     READY   STATUS             RESTARTS         AGE   IP          NODE                      NOMINATED NODE   READINESS GATES
+server                   1/1     Running            0                30h   10.42.0.4   k3d-leandrosnp-agent-0    <none>           <none>
+nginx                    1/1     Running            0                30h   10.42.2.5   k3d-leandrosnp-server-0   <none>           <none>
+client                   1/1     Running            0                30h   10.42.2.6   k3d-leandrosnp-server-0   <none>           <none>
+fifo-pod                 0/2     CrashLoopBackOff   16 (3m54s ago)   21m   10.42.0.5   k3d-leandrosnp-agent-0    <none>           <none>
+nginx-77b4fdf86c-4q2x6   1/1     Running            0                32s   10.42.2.8   k3d-leandrosnp-server-0   <none>           <none>
+nginx-77b4fdf86c-pzzq9   1/1     Running            0                32s   10.42.1.8   k3d-leandrosnp-agent-1    <none>           <none>
+ ~/src/k8s/leandronsp             
+
+
+ deployments can be updated, replicasets command:
+
+kubectl exec -it deploy/nginx -- nginx -v 
+
+update nginx
+
+kubectl set image deployment/nginx nginx=nginx:1.22.1  
+
+kubectl set image deployment/nginx nginx=nginx:1.24.0 
+
+takes time to rollout 1.24 nginx
+
+k get replicasets                                                                                   
+NAME               DESIRED   CURRENT   READY   AGE
+nginx-77b4fdf86c   0         0         0       11m
+nginx-5df987cfc6   2         2         2       2m31s <-- latest replicasets. 2 others were shutdown 
+nginx-85954cf5d7   0         0         0       6m58s
+
+
+k rollout history deployment/nginx                                                                    
+deployment.apps/nginx 
+REVISION  CHANGE-CAUSE
+1         <none>
+2         <none>
+3         <none>
+
+
+                                                  
+5:Annotations:            deployment.kubernetes.io/revision: 3
+
+revision 1: nginx:1.25.3
+revision 2: nginx:1.22
+revision 3: nginx:1.24.0
+
+
+kubectl exec -it deploy/nginx -- nginx -v                                                           
+nginx version: nginx/1.24.0
+
+kubectl exec -it deploy/nginx -- nginx -v                                                              
+nginx version: nginx/1.22.1
+
+k rollout undo deployment/nginx  # rollback to prevision revision
+
+k rollout undo deployment/nginx --to-revision=1
+
+kubectl scale deployment/nginx --replicas=3  
+
+kubectl exec pg-5986bcdb79-kzlnm  -- \                                                                 ✔  k3d-leandrosnp ⎈  09:55:39 
+    psql -U postgres -c \
+    "CREATE TABLE users (id SERIAL, name VARCHAR);"
+
+
+kubectl exec pg-5986bcdb79-kzlnm  -- \                                                                 ✔  k3d-leandrosnp ⎈  09:56:57 
+     psql -U postgres -c "SELECT * FROM users;"       
+
+kubectl rollout restart deploy/pg
+
+ubectl rollout restart deploy/pg                                                                     
+deployment.apps/pg restarted
+ ~/src/k8s/leandronsp  k get pods -o wide | grep pg                                                                          
+pg-6fd66dfb5c-jl6k7      1/1     Running            0                 
+ ~/src/k8s/leandronsp  kubectl exec pg-6fd66dfb5c-jl6k7   -- \                                                               
+     psql -U postgres -c "SELECT * FROM users;"
+ERROR:  relation "users" does not exist
+LINE 1: SELECT * FROM users;
+
+# the records were deleted because the pod was changed.
+
+# create persistentVolumeClaim
+ k apply -f persistentVolumeClaim_1
+
+# to verify
+ k get pvc -A  
+
+ # desribe
+ k describe pvc my-pvc 
+
+
+ The PVC requires some attributes:
+
+storageClassName: it's a class of storage defined by the administrator of the cluster. 
+Storage class holds traits about policies and other storage services of the cluster. We'll create it soon.
+volumeName: the persistent volume, which is a piece of storage that can be statically of dynamically provisioned in the cluster
+accessModes, resources among others...
+
+# k apply -f storageClass_2 create storageClassName:
+k apply -f storageClass_2   
+
+# list
+k get storageClass -A 
+
+# describe
+k describe storageClass my-sc
+
+# The Persistent Volume is a piece of storage in the underlying infrastructure.
+
+# By defining capacity, storageClass, accessMode and hostPath, we can declare such a piece ready to be used by a PVC in a Pod.
+ k apply -f persistentVolume_3 
+
+ # deploy new pg
+k apply -f pvc_deploy_4
+
+ # check for pods, old pg is still running, will be deleted once new pod is running
+  k get pods -o wide | grep pg                                                                           
+pg-6fd66dfb5c-jl6k7      1/1     Running             0             
+pg-f79df78db-xnjp5       0/1     ContainerCreating   0  
+
+# create table
+kubectl exec pg-f79df78db-xnjp5  -- psql -U postgres -c "CREATE TABLE users (id SERIAL, name VARCHAR);"
+
+# Select from table
+kubectl exec pg-f79df78db-xnjp5  -- psql -U postgres -c "SELECT * FROM users" 
+
+# let upgrade pg and check if table user is not lost
+kubectl scale deploy/pg --replicas=2 
+
+# select from table
+kubectl exec pg-f79df78db-xnjp5  -- psql -U postgres -c "SELECT * FROM users"
+
+$ but selecting from new pg will resort to error. 
+kubectl exec pg-f79df78db-n6xbp  -- psql -U postgres -c "SELECT * FROM users"                        
+ERROR:  relation "users" does not exist
+LINE 1: SELECT * FROM users
+                      ^
+command terminated with exit code 1
+
+why?
+Hence, despite it's possible, Deployments are not a good fit for stateful applications.
+
+# rename branch
+git commit -m "before stateful sets"
+
+# use Stateful Sets
