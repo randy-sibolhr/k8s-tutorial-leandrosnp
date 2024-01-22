@@ -212,5 +212,5 @@ Hence, despite it's possible, Deployments are not a good fit for stateful applic
 # rename branch
 git commit -m "before stateful sets"
 
-# more to follow
+
 # use Stateful Sets
