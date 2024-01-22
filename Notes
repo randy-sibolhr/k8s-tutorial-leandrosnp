@@ -1,0 +1,14 @@
+
+when starting new cluster (not k3s-default) 
+k get pods -- result to The connection to the server 0.0.0.0:6550 was refused - did you specify the right host or port?
+
+this solved the problem
+export KUBECONFIG="$(k3d kubeconfig write jan16-cluster)" 
+
+k3d cluster create leandrosnp -p "8800:30080@agent:0" -p "8801:30081@agent:0" -p "8802:30082@agent:0" --agents 2
+export KUBECONFIG="$(k3d kubeconfig write leandrosnp)" 
+
+ kubectl run nginx --image=nginx
+ k describe pod nginx  
+
+ 
